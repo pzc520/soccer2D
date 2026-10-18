@@ -1,0 +1,136 @@
+bhv_basic_move.cpp：限制同时追球人数，减少无效冲刺和仓促抢断。
+• bhv_basic_tackle.cpp：关闭主动犯规铲球。
+• sample_player.cpp：启用直接传球动作。
+• Makefile.am：加入数据提取模块的编译依赖。
+
+move = root / 'bhv_basic_move.cpp'
+s = move.read_text()
+
+if 'closer_mates' not in s:
+    replacements = [
+        ('double doTackleProb = 0.8;', 'double doTackleProb = 0.55;'),
+        ('doTackleProb = 0.5;', 'doTackleProb = 0.30;'),
+        ('pressing = 6 + static_cast< int >( danger * 8.0 ); // 6..14',
+         'pressing = 5 + static_cast< int >( danger * 7.0 ); // 5..12'),
+        ('if ( role == 4 || role == 5 ) pressing += 2;',
+         'if ( role == 4 || role == 5 ) pressing += 1;'),
+        ('pressing = 4 + static_cast< int >( danger * 6.0 ); // 4..10',
+         'pressing = 3 + static_cast< int >( danger * 5.0 ); // 3..8'),
+    ]
+
+    for old, new in replacements:
+        if old not in s:
+            raise SystemExit('Pattern not found: ' + old)
+        s = s.replace(old, new, 1)
+
+    old_block = '''    if ( danger < 0.0 ) danger = 0.0;
+    if ( danger > 1.0 ) danger = 1.0;
+
+    if ( role >= 2 && role <= 5 )'''
+
+    new_block = '''    if ( danger < 0.0 ) danger = 0.0;
+    if ( danger > 1.0 ) danger = 1.0;
+
+    // Limit the number of players chasing the same ball.
+    int closer_mates = 0;
+    const double self_ball_dist = me.dist( wm.ball().pos() );
+    const auto mates = wm.teammatesFromSelf();
+    for ( auto it = mates.begin(); it != mates.end(); ++it )
+    {
+        if ( (*it)->unum() != wm.self().unum()
+             && (*it)->pos().dist( wm.ball().pos() ) < self_ball_dist )
+        {
+            ++closer_mates;
+        }
+    }
+
+    const bool may_press =
+        closer_mates < ( danger > 0.55 ? 2 : 1 );
+
+    if ( role >= 2 && role <= 5 )'''
+
+    if old_block not in s:
+        raise SystemExit('Movement pressure block not found')
+    s = s.replace(old_block, new_block, 1)
+
+    old_condition = '''    if ( ! wm.kickableTeammate()
+         && ( self_min <= 3
+              || ( self_min <= mate_min
+                   && self_min < opp_min + pressing ) )
+         )'''
+
+    new_condition = '''    if ( ! wm.kickableTeammate()
+         && may_press
+         && ( self_min <= 2
+              || ( self_min <= mate_min
+                   && self_min < opp_min + pressing ) )
+         )'''
+
+    if old_condition not in s:
+        raise SystemExit('Intercept condition not found')
+    s = s.replace(old_condition, new_condition, 1)
+    move.write_text(s)
+
+# ---------- 2. Disable deliberate foul tackles ----------
+tackle = root / 'bhv_basic_tackle.cpp'
+s = tackle.read_text()
+
+if 'deliberate foul tackles are disabled' not in s:
+    old_block = '''    if ( agent->config().version() >= 14.0
+         && wm.self().card() == NO_CARD
+         && ( wm.ball().pos().x > SP.ourPenaltyAreaLineX() + 0.5
+              || wm.ball().pos().absY() > SP.penaltyAreaHalfWidth() + 0.5 )
+         && tackle_prob < wm.self().foulProbability() )
+    {
+        tackle_prob = wm.self().foulProbability();
+        use_foul = true;
+    }'''
+
+    new_block = '''    // deliberate foul tackles are disabled to reduce cards and free kicks'''
+
+    if old_block not in s:
+        raise SystemExit('Foul tackle block not found')
+    s = s.replace(old_block, new_block, 1)
+    tackle.write_text(s)
+
+# ---------- 3. Enable direct pass ----------
+sample = root / 'sample_player.cpp'
+s = sample.read_text()
+
+if 'ActGen_DirectPass' not in s:
+    marker = '''    //
+    // short dribble
+    //'''
+    block = '''    //
+    // direct pass
+    //
+    g->addGenerator( new ActGen_RangeActionChainLengthFilter
+                     ( new ActGen_DirectPass(),
+                       2, ActGen_RangeActionChainLengthFilter::MAX ) );
+
+''' + marker
+
+    if marker not in s:
+        raise SystemExit('Short dribble marker not found')
+    s = s.replace(marker, block, 1)
+    sample.write_text(s)
+
+# ---------- 4. Add data extractor sources to build ----------
+makefile = root / 'Makefile.am'
+s = makefile.read_text()
+
+if 'data_extractor/DEState.cpp' not in s:
+    marker = 'sample_player_SOURCES = \\\n'
+    addition = ('sample_player_SOURCES = \\\n'
+                '\tdata_extractor/DEState.cpp \\\n'
+                '\tdata_extractor/offensive_data_extractor.cpp \\\n')
+
+    if marker not in s:
+        raise SystemExit('sample_player_SOURCES marker not found')
+    s = s.replace(marker, addition, 1)
+    makefile.write_text(s)
+
+print('Code updates applied successfully')
+PY
+
+bash /mnt/hgfs/work/apply_changes.sh
