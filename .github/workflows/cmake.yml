@@ -37,10 +37,9 @@ jobs:
       run: |
         git clone https://github.com/helios-base/librcsc.git
         cd librcsc
-        git checkout 19175f339dcb5c3f61b56a8c1bff5345109f22ef
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+        git checkout 078d59ff85c336f94c021adac060ef6f2e63c575
+        ./bootstrap
+        ./configure --prefix="$HOME/.local" --disable-unit-test
         make -j8
         make install
     - name: Configure CMake
