@@ -2,9 +2,9 @@ name: CMake
 
 on:
   push:
-    branches: [ "cyrus2d" ]
+    branches: [ "cyrus2d", "dev-pzc" ]
   pull_request:
-    branches: [ "cyrus2d" ]
+    branches: [ "cyrus2d", "dev-pzc" ]
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -31,18 +31,9 @@ jobs:
         git checkout 19175f339dcb5c3f61b56a8c1bff5345109f22ef
         mkdir build
         cd build
-        cmake ..
+        cmake .. -DCMAKE_INSTALL_PREFIX="$HOME/.local"
         make -j8
         make install
-    - name: Install CppDnn
-      run: |
-        git clone https://github.com/Cyrus2D/CppDNN.git
-        cd CppDNN
-        mkdir build
-        cd build
-        cmake ..
-        make
-        sudo make install
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type

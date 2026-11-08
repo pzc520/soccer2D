@@ -78,7 +78,7 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     double doTackleProb = 0.8;
     if (wm.ball().pos().x < 0.0)
     {
-      doTackleProb = 0.5;
+      doTackleProb = 0.55;
     }
 
     if ( Bhv_BasicTackle( doTackleProb, 80.0 ).execute( agent ) )
@@ -119,14 +119,6 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     Vector2D homePos = target_point;
     int num = role;
 
-    auto opps = wm.opponentsFromBall();
-    const PlayerObject * nearest_opp
-            = ( opps.empty()
-                ? static_cast< PlayerObject * >( 0 )
-                : opps.front() );
-    const double nearest_opp_dist = ( nearest_opp
-                                      ? nearest_opp->distFromSelf()
-                                      : 1000.0 );
     if (ball.x < block_d)
     {
         double block_line = -38.0;
@@ -154,25 +146,31 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     } // end of block
 
 
-    // G2d: pressing
-    int pressing = 13;
+    // Only the closest teammate pursues the ball in normal play.  Allow a
+    // second defender close to our goal so the first can be covered.
+    const bool danger = ball.x < -36.0;
+    int closer_mates = 0;
+    const double self_ball_dist = me.dist( ball );
+    for ( const PlayerObject * tm : wm.teammatesFromSelf() )
+    {
+        if ( ! tm->isGhost()
+             && tm->pos().dist( ball ) + 0.5 < self_ball_dist )
+        {
+            ++closer_mates;
+        }
+    }
 
-    if ( role >= 6 && role <= 8 && wm.ball().pos().x > -30.0 && wm.self().pos().x < 10.0 )
-        pressing = 7;
-
-    if (fabs(wm.ball().pos().y) > 22.0 && wm.ball().pos().x < 0.0 && wm.ball().pos().x > -36.5 && (role == 4 || role == 5) ) 
-        pressing = 23;
-
-    // C2D: Helios 18 Tune removed -> replace with BNN
-    // if (helios2018) 
-	// pressing = 4;
+    const bool second_defender = danger && role >= 2 && role <= 5;
+    const bool may_press = closer_mates < ( second_defender ? 2 : 1 );
+    int pressing;
+    if ( role >= 2 && role <= 5 ) pressing = danger ? 12 : 5;
+    else if ( role >= 6 && role <= 8 ) pressing = danger ? 10 : 8;
+    else pressing = danger ? 8 : 4;
 
     if ( ! wm.kickableTeammate()
-         && ( self_min <= 3
-              || ( self_min <= mate_min
-                   && self_min < opp_min + pressing ) // pressing
-              )
-         )
+         && may_press
+         && self_min <= mate_min + ( danger ? 1 : 0 )
+         && ( self_min <= 2 || self_min < opp_min + pressing ) )
     {
         dlog.addText( Logger::TEAM,
                       __FILE__": intercept" );

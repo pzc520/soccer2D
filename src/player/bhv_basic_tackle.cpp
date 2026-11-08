@@ -57,18 +57,7 @@ Bhv_BasicTackle::execute( PlayerAgent * agent )
     const ServerParam & SP = ServerParam::i();
     const WorldModel & wm = agent->world();
 
-    bool use_foul = false;
     double tackle_prob = wm.self().tackleProbability();
-
-    if ( agent->config().version() >= 14.0
-         && wm.self().card() == NO_CARD
-         && ( wm.ball().pos().x > SP.ourPenaltyAreaLineX() + 0.5
-              || wm.ball().pos().absY() > SP.penaltyAreaHalfWidth() + 0.5 )
-         && tackle_prob < wm.self().foulProbability() )
-    {
-        tackle_prob = wm.self().foulProbability();
-        use_foul = true;
-    }
 
     if ( tackle_prob < M_min_probability )
     {
@@ -140,7 +129,7 @@ Bhv_BasicTackle::execute( PlayerAgent * agent )
     }
 
     // v14+
-    return executeV14( agent, use_foul );
+    return executeV14( agent, false );
 }
 
 /*-------------------------------------------------------------------*/

@@ -823,9 +823,9 @@ SamplePlayer::createActionGenerator() const
     //
     // direct pass
     //
-    // g->addGenerator( new ActGen_RangeActionChainLengthFilter
-    //                  ( new ActGen_DirectPass(),
-    //                    2, ActGen_RangeActionChainLengthFilter::MAX ) );
+    g->addGenerator( new ActGen_RangeActionChainLengthFilter
+                     ( new ActGen_DirectPass(),
+                       2, ActGen_RangeActionChainLengthFilter::MAX ) );
 
     //
     // short dribble
