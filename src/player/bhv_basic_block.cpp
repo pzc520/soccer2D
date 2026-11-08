@@ -12,6 +12,7 @@
 #include "strategy.h"
 #include "bhv_basic_tackle.h"
 #include "neck_offensive_intercept_neck.h"
+#include "intercept_prediction.h"
 
 #include "basic_actions/body_turn_to_point.h"
 #include "basic_actions/neck_turn_to_ball_or_scan.h"
@@ -37,11 +38,8 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
     const int mate_min = wm.interceptTable().teammateStep();
     const int opp_min = wm.interceptTable().opponentStep();
     if ( ! wm.kickableTeammate()
-         && ( self_min <= 3
-              || ( self_min <= mate_min
-                   && self_min < opp_min + 3 ) // pressing
-         )
-            )
+         && self_min <= mate_min
+         && ( self_min <= 3 || self_min < opp_min + 3 ) )
     {
         dlog.addText( Logger::TEAM,
                       __FILE__": intercept" );
@@ -125,6 +123,8 @@ std::vector<int> Bhv_BasicBlock::get_blockers(const PlayerAgent *agent)
             continue;
         if (tm->isTackling())
             continue;
+        if (!tm->playerTypePtr())
+            continue;
         if (tm->pos().dist(ball_inertia) > 40)
             continue;
         Vector2D tm_home_pos = Strategy::i().getPosition(tm->unum());
@@ -178,10 +178,14 @@ std::pair<int, Vector2D> Bhv_BasicBlock::get_best_blocker(const PlayerAgent *age
         for (auto &tm_unum : tm_blockers)
         {
             auto tm = wm.ourPlayer(tm_unum);
-            Vector2D tm_pos = tm->pos() + tm->vel(); //tm->playerTypePtr()->inertiaPoint(tm_pos, tm->vel(), cycle);
-            double dist = ball_inertia.dist(tm_pos);
-            int dash_step = tm->playerTypePtr()->cyclesToReachDistance(dist);
-            if (dash_step <= cycle)
+            const Vector2D tm_pos = tm->inertiaPoint(cycle);
+            const int dash_step = InterceptPrediction::dashCyclesToControl(
+                tm_pos, ball_inertia,
+                tm->playerTypePtr()->kickableArea(),
+                [&]( double distance ) {
+                    return tm->playerTypePtr()->cyclesToReachDistance( distance );
+                } );
+            if ( dash_step <= cycle )
             {
                 #ifdef DEBUG_BLOCK
                 dlog.addText(Logger::BLOCK, "$$$$ tm=%d, block_step=%d, can block", tm->unum(), dash_step);

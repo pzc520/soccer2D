@@ -39,6 +39,7 @@
 #include "bhv_basic_tackle.h"
 #include "neck_offensive_intercept_neck.h"
 #include "bhv_basic_block.h"
+#include "intercept_prediction.h"
 
 #include "basic_actions/basic_actions.h"
 #include "basic_actions/body_go_to_point.h"
@@ -156,31 +157,43 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     {
         int faster_mates = 0;
         const int search_limit = std::min( self_min, 30 );
+        const auto & player_steps = wm.interceptTable().playerMap();
         for ( const PlayerObject * tm : wm.teammatesFromSelf() )
         {
             if ( faster_mates >= 2 ) break;
-            if ( tm->isGhost() || tm->isTackling() || tm->posCount() > 5 )
+            if ( tm->isGhost() || tm->isTackling()
+                 || tm->posCount() > 5 )
             {
                 continue;
             }
 
-            // Test future ball positions, including teammate inertia and
-            // kickable area.  Ties are broken by uniform number.
-            for ( int cycle = 0; cycle <= search_limit; ++cycle )
+            // Prefer librcsc's full interception simulation. Estimate locally
+            // only when the table has no entry for this visible teammate.
+            const auto found = player_steps.find( tm );
+            int reach_cycle = search_limit + 1;
+            if ( found != player_steps.end() )
             {
-                const Vector2D ball_pos = wm.ball().inertiaPoint( cycle );
-                const double dash_dist = std::max( 0.0,
-                                                   tm->inertiaPoint( cycle ).dist( ball_pos )
-                                                   - tm->playerTypePtr()->kickableArea() );
-                if ( tm->playerTypePtr()->cyclesToReachDistance( dash_dist ) <= cycle )
-                {
-                    if ( cycle < self_min
-                         || ( cycle == self_min && tm->unum() < wm.self().unum() ) )
-                    {
-                        ++faster_mates;
-                    }
-                    break;
-                }
+                reach_cycle = found->second;
+            }
+            else if ( tm->playerTypePtr() )
+            {
+                reach_cycle = InterceptPrediction::earliestReachCycle(
+                    search_limit,
+                    tm->playerTypePtr()->kickableArea(),
+                    [&]( int cycle ) { return wm.ball().inertiaPoint( cycle ); },
+                    [&]( int cycle ) { return tm->inertiaPoint( cycle ); },
+                    [&]( double distance ) {
+                        return tm->playerTypePtr()->cyclesToReachDistance( distance );
+                    } );
+            }
+
+            // Ties are broken by uniform number.
+            if ( reach_cycle <= search_limit
+                 && ( reach_cycle < self_min
+                      || ( reach_cycle == self_min
+                           && tm->unum() < wm.self().unum() ) ) )
+            {
+                ++faster_mates;
             }
         }
         may_press = faster_mates < 2;

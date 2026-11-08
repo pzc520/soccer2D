@@ -84,6 +84,7 @@ sample_player_SOURCES = \
 	setplay/bhv_their_goal_kick_move.cpp \
 	setplay/intention_wait_after_set_play_kick.cpp \
 	bhv_basic_move.cpp \
+	bhv_basic_block.cpp \
 	bhv_basic_tackle.cpp \
 	bhv_custom_before_kick_off.cpp \
 	bhv_goalie_basic_move.cpp \
@@ -219,7 +220,9 @@ noinst_HEADERS = \
 	setplay/bhv_their_goal_kick_move.h \
 	setplay/intention_wait_after_set_play_kick.h \
 	bhv_basic_move.h \
+	bhv_basic_block.h \
 	bhv_basic_tackle.h \
+	intercept_prediction.h \
 	bhv_custom_before_kick_off.h \
 	bhv_goalie_basic_move.h \
 	bhv_goalie_chase_ball.h \
