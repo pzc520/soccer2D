@@ -146,22 +146,46 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     } // end of block
 
 
-    // Only the closest teammate pursues the ball in normal play.  Allow a
-    // second defender close to our goal so the first can be covered.
+    // The intercept table already compares reach cycles in normal play.
+    // Near our goal, estimate the other players' reach cycles to decide whether
+    // this defender should be the second player covering the ball.
     const bool danger = ball.x < -36.0;
-    int closer_mates = 0;
-    const double self_ball_dist = me.dist( ball );
-    for ( const PlayerObject * tm : wm.teammatesFromSelf() )
+    const bool second_defender = danger && role >= 2 && role <= 5;
+    bool may_press = true;
+    if ( second_defender )
     {
-        if ( ! tm->isGhost()
-             && tm->pos().dist( ball ) + 0.5 < self_ball_dist )
+        int faster_mates = 0;
+        const int search_limit = std::min( self_min, 30 );
+        for ( const PlayerObject * tm : wm.teammatesFromSelf() )
         {
-            ++closer_mates;
+            if ( faster_mates >= 2 ) break;
+            if ( tm->isGhost() || tm->isTackling() || tm->posCount() > 5 )
+            {
+                continue;
+            }
+
+            // Test future ball positions, including teammate inertia and
+            // kickable area.  Ties are broken by uniform number.
+            for ( int cycle = 0; cycle <= search_limit; ++cycle )
+            {
+                const Vector2D ball_pos = wm.ball().inertiaPoint( cycle );
+                const double dash_dist = std::max( 0.0,
+                                                   tm->inertiaPoint( cycle ).dist( ball_pos )
+                                                   - tm->playerTypePtr()->kickableArea() );
+                if ( tm->playerTypePtr()->cyclesToReachDistance( dash_dist ) <= cycle )
+                {
+                    if ( cycle < self_min
+                         || ( cycle == self_min && tm->unum() < wm.self().unum() ) )
+                    {
+                        ++faster_mates;
+                    }
+                    break;
+                }
+            }
         }
+        may_press = faster_mates < 2;
     }
 
-    const bool second_defender = danger && role >= 2 && role <= 5;
-    const bool may_press = closer_mates < ( second_defender ? 2 : 1 );
     int pressing;
     if ( role >= 2 && role <= 5 ) pressing = danger ? 12 : 5;
     else if ( role >= 6 && role <= 8 ) pressing = danger ? 10 : 8;
@@ -169,7 +193,7 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
 
     if ( ! wm.kickableTeammate()
          && may_press
-         && self_min <= mate_min + ( danger ? 1 : 0 )
+         && self_min <= mate_min + ( second_defender ? 1 : 0 )
          && ( self_min <= 2 || self_min < opp_min + pressing ) )
     {
         dlog.addText( Logger::TEAM,
