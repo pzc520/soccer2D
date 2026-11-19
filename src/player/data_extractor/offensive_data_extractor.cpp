@@ -214,6 +214,9 @@ void OffensiveDataExtractor::generate_save_data(const WorldModel & wm, const Coo
 }
 
 std::vector<double> OffensiveDataExtractor::get_data(DEState & state){
+    if (!state.kicker())
+        return {};
+
     features.clear();
     if (option.cycle)
         ADD_ELEM("cycle", convertor_cycle(state.cycle()));
@@ -258,7 +261,7 @@ void OffensiveDataExtractor::extract_ball(DEState &state) {
 }
 
 void OffensiveDataExtractor::extract_players(DEState &state) {
-    auto players = sort_players(state);
+    const auto players = players_by_uniform_number(state);
     #ifdef ODEDebug
     dlog.addText(Logger::BLOCK, "start extract_players");
     #endif
@@ -293,40 +296,20 @@ void OffensiveDataExtractor::extract_players(DEState &state) {
     }
 }
 
-std::vector<DEPlayer *> OffensiveDataExtractor::sort_players(DEState &state) {
-    static int cycle = 0;
-    static std::vector<DEPlayer *> tms;
-    if (state.wm().time().cycle() == cycle){
-        return tms;
-    }
-
-    cycle = state.wm().time().cycle();
-    tms.clear();
-    std::vector<DEPlayer *> opps;
-    tms.clear();
-    opps.clear();
-
-    for (int i = 1; i <= 11; i++){
-        DEPlayer * player = state.ourPlayer(i);
-        if (player == nullptr || player->unum() < 0 || !player->pos().isValid() || player->isGhost()){
-            tms.push_back(nullptr);
-            continue;
+std::array<DEPlayer *, 22> OffensiveDataExtractor::players_by_uniform_number(DEState &state) {
+    std::array<DEPlayer *, 22> players{};
+    for (int unum = 1; unum <= 11; ++unum){
+        DEPlayer *teammate = state.ourPlayer(unum);
+        if (teammate && teammate->pos().isValid() && !teammate->isGhost()){
+            players[unum - 1] = teammate;
         }
-        tms.push_back(player);
-    }
 
-    for (int i = 1; i <= 11; i++){
-        DEPlayer * player = state.theirPlayer(i);
-        if (player == nullptr || player->unum() < 0 || !player->pos().isValid()){
-            opps.push_back(nullptr);
-            continue;
+        DEPlayer *opponent = state.theirPlayer(unum);
+        if (opponent && opponent->pos().isValid()){
+            players[unum + 10] = opponent;
         }
-        opps.push_back(player);
     }
-
-    tms.insert(tms.end(), opps.begin(), opps.end());
-
-    return tms;
+    return players;
 }
 
 void OffensiveDataExtractor::add_null_player(int unum, ODEDataSide side) {
@@ -375,17 +358,18 @@ void OffensiveDataExtractor::extract_output(DEState &state,
 }
 
 void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state, ODEDataSide side) {
-    Vector2D ball_pos = state.ball().pos();
-    Vector2D tm_pos = player->pos();
-    int max_pos_count = 30;
-    if (player->unum() == state.kicker()->unum() && player->side() == state.ourSide()){
-        max_pos_count = 20;
-    }
+    const bool extract_open_angle = option.openAnglePass == side || option.openAnglePass == BOTH;
+    const bool extract_nearest = option.nearestOppDist == side || option.nearestOppDist == BOTH;
+    if (!extract_open_angle && !extract_nearest)
+        return;
+
+    const Vector2D ball_pos = state.ball().pos();
+    const Vector2D tm_pos = player->pos();
     #ifdef ODEDebug
     dlog.addText(Logger::BLOCK, "##start extract pass angle");
     #endif
     if (!ball_pos.isValid() || !tm_pos.isValid() || !state.ball().posValid()){
-        if (option.openAnglePass == side || option.openAnglePass == BOTH) {
+        if (extract_open_angle) {
             #ifdef ODEDebug
             dlog.addText(Logger::BLOCK, "#### add invalid data for open angle pass");
             #endif
@@ -394,7 +378,7 @@ void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state
             ADD_ELEM("pass_opp_dist_proj_to_kicker", invalid_data_);
             ADD_ELEM("pass_opp_open_angle", invalid_data_);
         }
-        if (option.nearestOppDist == side || option.nearestOppDist == BOTH){
+        if (extract_nearest){
             #ifdef ODEDebug
             dlog.addText(Logger::BLOCK, "#### add invalid for nearest opp dist");
             #endif
@@ -429,7 +413,7 @@ void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state
         candidates.push_back(candid);
 
     }
-    if (option.openAnglePass == side || option.openAnglePass == BOTH) {
+    if (extract_open_angle) {
         auto open_angle_sorter = [](ODEOpenAngle &p1, ODEOpenAngle &p2) -> bool {
             return p1.open_angle < p2.open_angle;
         };
@@ -454,7 +438,7 @@ void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state
             ADD_ELEM("pass_opp_open_angle", invalid_data_);
         }
     }
-    if (option.nearestOppDist == side || option.nearestOppDist == BOTH){
+    if (extract_nearest){
         std::sort(opp_dist_angle.begin(), opp_dist_angle.end());
         if (opp_dist_angle.size() >= 1){
             #ifdef ODEDebug
@@ -659,9 +643,7 @@ double OffensiveDataExtractor::convertor_counts(double count) {
 }
 
 uint OffensiveDataExtractor::find_unum_index(DEState &state, uint unum) {
-    auto players = sort_players(state);
-    if (players.size() < 11)
-        std::cout<<state.kicker()->unum()<<" "<<"size problems"<<players.size()<<std::endl;
+    const auto players = players_by_uniform_number(state);
     for (uint i = 0; i < 11; i++) {
         auto player = players[i];
         if (player == nullptr)

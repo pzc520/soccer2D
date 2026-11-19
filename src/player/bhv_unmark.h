@@ -119,11 +119,13 @@ public:
 
     bool run(PlayerAgent *agent, const UnmarkPosition &unmark_position);
 
-    static DeepNueralNetwork * pass_prediction;
+    static DeepNueralNetwork pass_prediction;
 
     static bool load_dnn(const std::string &config_dir);
 
-    vector<pass_prob> predict_pass_dnn(vector<double> & features, vector<int> ignored_player, int kicker);
+    vector<pass_prob> predict_pass_dnn(const vector<double> &features,
+                                       const vector<int> &ignored_player,
+                                       int kicker);
 
     int find_passer_dnn(const WorldModel & wm, PlayerAgent * agent);
 

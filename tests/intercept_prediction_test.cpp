@@ -73,4 +73,12 @@ int main()
     assert( ! InterceptPrediction::canReachAtCycle( far_player( 0 ),
                                                     unknown_ball, 10, 1.0,
                                                     one_meter_per_cycle ) );
+
+    // At the same block point, reach time takes priority over uniform number.
+    assert( InterceptPrediction::hasBlockPriority( 3, 8, 4, 2 ) );
+    assert( ! InterceptPrediction::hasBlockPriority( 4, 2, 3, 8 ) );
+
+    // A tie is resolved consistently even when each player sees itself first.
+    assert( InterceptPrediction::hasBlockPriority( 3, 2, 3, 8 ) );
+    assert( ! InterceptPrediction::hasBlockPriority( 3, 8, 3, 2 ) );
 }

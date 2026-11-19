@@ -7,6 +7,7 @@
 #ifndef CYRUS_OffensiveDataExtractor_H
 #define CYRUS_OffensiveDataExtractor_H
 
+#include <array>
 #include <fstream>
 #include <rcsc/geom.h>
 #include <rcsc/player/player_agent.h>
@@ -128,7 +129,7 @@ private:
 
     void extract_drible_angles(DEState &state);
 
-    std::vector<DEPlayer *> sort_players(DEState &state);
+    std::array<DEPlayer *, 22> players_by_uniform_number(DEState &state);
 };
 
 class ODEPolar {

@@ -179,6 +179,8 @@ Bhv_BasicBlock::get_best_blocker(
         snprintf( num, 8, "%d", cycle );
         dlog.addMessage(Logger::BLOCK, ball_inertia + Vector2D(0, 1), num);
         #endif
+        const AbstractPlayerObject *best_blocker = nullptr;
+        int best_dash_step = 0;
         for (const auto *tm : tm_blockers)
         {
             const auto *player_type = tm->playerTypePtr();
@@ -191,12 +193,15 @@ Bhv_BasicBlock::get_best_blocker(
                 } );
             if ( dash_step <= cycle )
             {
-                #ifdef DEBUG_BLOCK
-                dlog.addText(Logger::BLOCK, "$$$$ tm=%d, block_step=%d, can block", tm->unum(), dash_step);
-                dlog.addCircle(Logger::BLOCK, ball_inertia, 0.5, 0, 0, 255, false);
-                dlog.addLine(Logger::BLOCK, ball_inertia, tm_pos);
-                #endif
-                return {tm, ball_inertia};
+                // The world model lists self first, so candidate order cannot
+                // break ties consistently across teammates.
+                if (!best_blocker
+                    || InterceptPrediction::hasBlockPriority(
+                        dash_step, tm->unum(), best_dash_step, best_blocker->unum()))
+                {
+                    best_blocker = tm;
+                    best_dash_step = dash_step;
+                }
             }
             #ifdef DEBUG_BLOCK
             else
@@ -204,6 +209,15 @@ Bhv_BasicBlock::get_best_blocker(
                 dlog.addText(Logger::BLOCK, "$$$$ tm=%d, block_step=%d, can not block", tm->unum(), dash_step);
             }
             #endif
+        }
+        if (best_blocker)
+        {
+            #ifdef DEBUG_BLOCK
+            dlog.addText(Logger::BLOCK, "$$$$ tm=%d, block_step=%d, can block", best_blocker->unum(), best_dash_step);
+            dlog.addCircle(Logger::BLOCK, ball_inertia, 0.5, 0, 0, 255, false);
+            dlog.addLine(Logger::BLOCK, ball_inertia, best_blocker->inertiaPoint(cycle));
+            #endif
+            return {best_blocker, ball_inertia};
         }
     }
 

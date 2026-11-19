@@ -113,8 +113,8 @@ public:
     std::vector<DEPlayer*> M_known_opponents;
     std::vector<DEPlayer*> M_our_players;
     std::vector<DEPlayer*> M_their_players;
-    int M_kicker_unum;
-    DEPlayer* M_kicker_player;
+    int M_kicker_unum = Unum_Unknown;
+    DEPlayer* M_kicker_player = nullptr;
     double M_offside_line_x;
     int M_offside_line_count;
     int M_our_side;
@@ -177,10 +177,10 @@ public:
                 #ifdef DESDebug
                 dlog.addText(Logger::BLOCK, "####pushed to ourPlayers, teammates");
                 #endif
-                if (p->unum() != -1){
+                if (p->unum() >= 1 && p->unum() <= 11){
                     M_known_teammates[p->unum()] = p;
                     #ifdef DESDebug
-                    dlog.addText(Logger::BLOCK, "#####add to kn tm %d %d, add %s", p->unum(), M_known_teammates[p->unum()]->unum(), p);
+                    dlog.addText(Logger::BLOCK, "#####add to known teammates %d", p->unum());
                     #endif
                 }
             }else{
@@ -202,7 +202,7 @@ public:
                     #endif
                     M_unknown_players.push_back(p);
                 }
-                if (p->unum() != -1){
+                if (p->unum() >= 1 && p->unum() <= 11){
                     #ifdef DESDebug
                     dlog.addText(Logger::BLOCK, "#####pushed to known_opponents");
                     #endif
@@ -211,25 +211,19 @@ public:
             }
         }
         #ifdef DESDebug
-        dlog.addText(Logger::BLOCK, "----M_known_teammates--- %d", M_known_teammates.size());
+        dlog.addText(Logger::BLOCK, "----M_known_teammates--- %zu", M_known_teammates.size());
         for (auto p: M_known_teammates){
             if (p != nullptr)
-                dlog.addText(Logger::BLOCK, "## tm %d side %d %s", p->unum(), p->side(), p);
+                dlog.addText(Logger::BLOCK, "## tm %d side %d", p->unum(), p->side());
         }
         #endif
-        int fastest_unum = wm.interceptTable().firstTeammate()->unum();
-        int tm_reach = wm.interceptTable().teammateStep();
-        int self_reach = wm.interceptTable().selfStep();
-        if (self_reach <= tm_reach){
-            M_kicker_unum = wm.self().unum();
-            M_kicker_player = M_known_teammates[wm.self().unum()];
-        }else{
-            M_kicker_unum = fastest_unum;
-            M_kicker_player = M_known_teammates[fastest_unum];
+        const auto &intercept_table = wm.interceptTable();
+        if (intercept_table.selfStep() <= intercept_table.teammateStep()){
+            M_kicker_player = ourPlayer(wm.self().unum());
+        }else if (const auto *fastest_teammate = intercept_table.firstTeammate()){
+            M_kicker_player = ourPlayer(fastest_teammate->unum());
         }
-        if (M_kicker_unum == -1){
-            M_kicker_player = nullptr;
-        }
+        M_kicker_unum = M_kicker_player ? M_kicker_player->unum() : Unum_Unknown;
     }
     std::vector<DEPlayer*> & allPlayers(){
         return M_all_players;
@@ -237,7 +231,7 @@ public:
     std::vector<DEPlayer*> teammates(){
         return M_teammates;
     }
-    std::vector<DEPlayer*> opponents(){
+    const std::vector<DEPlayer*> &opponents() const {
         return M_opponents;
     }
     std::vector<DEPlayer*> unknownPlayers(){

@@ -14,9 +14,13 @@
 #include "bhv_unmark.h"
 #include "intention_receive.h"
 #include "planner/field_analyzer.h"
+#include <algorithm>
+#include <cmath>
 #include <exception>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include <rcsc/player/say_message_builder.h>
@@ -37,14 +41,104 @@ using namespace std;
 using namespace rcsc;
 
 
-// static bool debug = false;
-Bhv_Unmark::UnmarkPosition Bhv_Unmark::last_unmark_position = UnmarkPosition();
-DeepNueralNetwork * Bhv_Unmark::pass_prediction = new DeepNueralNetwork();
+namespace {
 
+constexpr int unmark_input_size = 290;
+constexpr int unmark_output_size = 12;
+
+bool read_model_label(std::istream &input, std::initializer_list<const char *> tokens)
+{
+    std::string token;
+    for (const char *expected : tokens)
+    {
+        if (!(input >> token) || token != expected)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool read_model_values(std::istream &input, Eigen::Index count, std::vector<double> &values)
+{
+    for (Eigen::Index index = 0; index < count; ++index)
+    {
+        double value;
+        if (!(input >> value) || !std::isfinite(value))
+        {
+            return false;
+        }
+        values.push_back(value);
+    }
+    return true;
+}
+
+bool read_unmark_model(std::istream &input, DeepNueralNetwork &network)
+{
+    int layer_count = 0;
+    if (!read_model_label(input, {"#", "Layer", "Numbers:"})
+        || !(input >> layer_count) || layer_count <= 0)
+    {
+        return false;
+    }
+
+    DeepNueralNetwork parsed;
+    Eigen::Index expected_columns = unmark_input_size;
+    for (int layer = 0; layer < layer_count; ++layer)
+    {
+        int layer_number = -1;
+        std::string activation;
+        Eigen::Index rows = 0;
+        Eigen::Index columns = 0;
+        if (!read_model_label(input, {"#", "Layer", "Number:"})
+            || !(input >> layer_number >> activation >> rows >> columns)
+            || layer_number != layer
+            || (activation != "linear" && activation != "relu" && activation != "elu"
+                && activation != "sigmoid" && activation != "softmax")
+            || columns != expected_columns || rows <= 0
+            || rows > std::numeric_limits<Eigen::Index>::max() / columns
+            || (layer == layer_count - 1 && rows != unmark_output_size))
+        {
+            return false;
+        }
+
+        // Read actual values before constructing matrices so a truncated file
+        // cannot allocate memory based solely on its declared dimensions.
+        std::vector<double> weights;
+        std::vector<double> biases;
+        if (!read_model_label(input, {"#", "W"})
+            || !read_model_values(input, rows * columns, weights)
+            || !read_model_label(input, {"#", "B"})
+            || !read_model_values(input, rows, biases))
+        {
+            return false;
+        }
+
+        // CppDNN serializes the weights one column at a time.
+        using ColumnMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+        const Eigen::Map<const ColumnMajorMatrix> weight_matrix(weights.data(), rows, columns);
+        const Eigen::Map<const Eigen::VectorXd> bias_vector(biases.data(), rows);
+        parsed.mLayers.emplace_back(weight_matrix, bias_vector, StringToFunction(activation));
+        expected_columns = rows;
+    }
+
+    input >> std::ws;
+    if (!input.eof() || input.bad())
+    {
+        return false;
+    }
+
+    network = std::move(parsed);
+    return true;
+}
+
+} // namespace
+
+Bhv_Unmark::UnmarkPosition Bhv_Unmark::last_unmark_position = UnmarkPosition();
+DeepNueralNetwork Bhv_Unmark::pass_prediction;
 
 bool Bhv_Unmark::execute(PlayerAgent *agent) {
     const WorldModel &wm = agent->world();
-    int passer = find_passer_dnn(wm,agent);
     if (!can_unmarking(wm))
         return false;
 
@@ -62,27 +156,7 @@ bool Bhv_Unmark::execute(PlayerAgent *agent) {
         }
     }
 
-    // int passer = passer_finder(agent);
-
-    // std::cout << "st_____" <<  wm.time().cycle() << " " << wm.self().unum() << std::endl;
-
-    // DEState state = DEState(wm);
-    // int fastest_tm = 0;
-    // if (wm.interceptTable()->fastestTeammate() != nullptr)
-    //     fastest_tm = wm.interceptTable()->fastestTeammate()->unum();
-    // int tm_reach_cycle = wm.interceptTable()->teammateReachCycle();
-    // if (fastest_tm != 0 && !state.updateKicker(fastest_tm, wm.ball().inertiaPoint(tm_reach_cycle)))
-    //     fastest_tm = 0;
-    // if (fastest_tm != 0){
-    //     auto features = OffensiveDataExtractor::i().get_data(state);
-    //     vector<int> ignored_player;
-    //     ignored_player.push_back(5);
-    //     auto passes = predict_pass_dnn(features, ignored_player, fastest_tm);
-    // }
-
-    // std::cout << wm.time().cycle()  << "ed___ " << wm.self().unum() << " __ "  << passer << std::endl;
-    // passer = passer_finder(agent);
-
+    const int passer = find_passer_dnn(wm, agent);
     dlog.addText(Logger::POSITIONING, "Should unmarking for %d", passer);
     if (passer == 0)
         return false;
@@ -474,45 +548,68 @@ bool Bhv_Unmark::load_dnn(const std::string &config_dir)
     static const bool loaded = [&config_dir]() {
         const std::string filename = "unmark_dnn_weights.txt";
         const std::string bundled_path = config_dir + "/../" + filename;
+        bool found = false;
         for (const auto &path : {bundled_path, filename})
         {
-            if (std::ifstream(path))
+            std::ifstream input(path);
+            if (!input)
             {
-                try
+                continue;
+            }
+            found = true;
+
+            try
+            {
+                if (read_unmark_model(input, pass_prediction))
                 {
-                    return pass_prediction->ReadFromKeras(path);
+                    std::cout << "layerSize: " << pass_prediction.mLayers.size() << std::endl;
+                    return true;
                 }
-                catch (const std::exception &error)
-                {
-                    std::cerr << "Unmark DNN: could not load " << path
-                              << ": " << error.what() << std::endl;
-                    return false;
-                }
+                std::cerr << "Unmark DNN: invalid weights at " << path << std::endl;
+            }
+            catch (const std::exception &error)
+            {
+                std::cerr << "Unmark DNN: could not load " << path
+                          << ": " << error.what() << std::endl;
             }
         }
-        std::cerr << "Unmark DNN: weights not found at " << bundled_path
-                  << " or in the current directory." << std::endl;
+        if (!found)
+        {
+            std::cerr << "Unmark DNN: weights not found at " << bundled_path
+                      << " or in the current directory." << std::endl;
+        }
         return false;
     }();
     return loaded;
 }
 
-vector<pass_prob> Bhv_Unmark::predict_pass_dnn(vector<double> & features, vector<int> ignored_player, int kicker){
-    MatrixXd input(290,1); // 290 12
-    for (int i = 1; i <= 290; i += 1){
-        input(i - 1,0) = features[i];
+vector<pass_prob>
+Bhv_Unmark::predict_pass_dnn(const vector<double> &features,
+                             const vector<int> &ignored_player,
+                             int kicker)
+{
+    if (features.size() != unmark_input_size)
+    {
+        return {};
     }
-    pass_prediction->Calculate(input);
+
+    const Eigen::Map<const Eigen::VectorXd> input(features.data(), unmark_input_size);
+    pass_prediction.Calculate(input);
+    if (!pass_prediction.mOutput.allFinite())
+    {
+        return {};
+    }
+
     vector<pass_prob> predict;
-    for (int i = 0; i < 12; i++){
+    for (int i = 0; i < unmark_output_size; i++){
 
         if (i == 0){
-            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f NOK(0)", kicker, i, pass_prediction->mOutput(i));
+            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f NOK(0)", kicker, i, pass_prediction.mOutput(i));
         }else if(std::find(ignored_player.begin(), ignored_player.end(), i) == std::end(ignored_player)){
-            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f OKKKK", kicker, i, pass_prediction->mOutput(i));
-            predict.push_back(pass_prob(pass_prediction->mOutput(i), kicker, i));
+            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f OKKKK", kicker, i, pass_prediction.mOutput(i));
+            predict.push_back(pass_prob(pass_prediction.mOutput(i), kicker, i));
         }else{
-            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f NOK(ignored)", kicker, i, pass_prediction->mOutput(i));
+            dlog.addText(Logger::POSITIONING, "##### Pass from %d to %d : %.6f NOK(ignored)", kicker, i, pass_prediction.mOutput(i));
         }
     }
     std::sort(predict.begin(), predict.end(),pass_prob::ProbCmp);
@@ -522,17 +619,19 @@ vector<pass_prob> Bhv_Unmark::predict_pass_dnn(vector<double> & features, vector
 
 int Bhv_Unmark::find_passer_dnn(const WorldModel & wm, PlayerAgent * agent){
     dlog.addText(Logger::POSITIONING, "############### Start Update Passer DNN ###########");
-    DEState state = DEState(wm);
-
-    int fastest_tm = 0;
-    if (wm.interceptTable().firstTeammate() != nullptr)
-        fastest_tm = wm.interceptTable().firstTeammate()->unum();
-    if (fastest_tm < 1)
-        return 0;
-    int tm_reach_cycle = wm.interceptTable().teammateStep();
-    if (!state.updateKicker(fastest_tm, wm.ball().inertiaPoint(tm_reach_cycle))
+    const auto *fastest_teammate = wm.interceptTable().firstTeammate();
+    if (!fastest_teammate || fastest_teammate->unum() < 1
         || !load_dnn(agent->config().configDir()))
+    {
         return 0;
+    }
+    const int fastest_tm = fastest_teammate->unum();
+    const int tm_reach_cycle = wm.interceptTable().teammateStep();
+    DEState state(wm);
+    if (!state.updateKicker(fastest_tm, wm.ball().inertiaPoint(tm_reach_cycle)))
+    {
+        return 0;
+    }
 
     vector<int> ignored_player;
     string ignored = "";
@@ -569,13 +668,8 @@ int Bhv_Unmark::find_passer_dnn(const WorldModel & wm, PlayerAgent * agent){
         if (state.updateKicker(best_pass.pass_getter)){
             auto features = OffensiveDataExtractor::i().get_data(state);
             auto passes = predict_pass_dnn(features, ignored_player, best_pass.pass_getter);
-            int max_pass = 2;
-            for (int p = passes.size() - 1; p >= 0; p--){
-                if (max_pass == 0)
-                    break;
-                all_passes.push_back(passes[p]);
-                max_pass -= 1;
-            }
+            const auto count = std::min<std::size_t>(2, passes.size());
+            all_passes.insert(all_passes.end(), passes.rbegin(), passes.rbegin() + count);
         }
     }
 

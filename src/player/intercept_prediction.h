@@ -13,6 +13,16 @@ namespace InterceptPrediction {
 // Sentinel returned by the librcsc intercept table when no reach is predicted.
 constexpr int unreachable_cycle = 1000;
 
+inline bool hasBlockPriority( const int dash_cycles,
+                              const int uniform_number,
+                              const int other_dash_cycles,
+                              const int other_uniform_number )
+{
+    return dash_cycles < other_dash_cycles
+        || ( dash_cycles == other_dash_cycles
+             && uniform_number < other_uniform_number );
+}
+
 template < typename Point, typename ReachCycles >
 int dashCyclesToControl( const Point & player_pos,
                          const Point & ball_pos,
