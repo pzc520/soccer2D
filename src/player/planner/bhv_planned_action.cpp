@@ -206,15 +206,18 @@ Bhv_PlannedAction::execute( PlayerAgent * agent )
     dlog.addText( Logger::TEAM,
                   __FILE__": Bhv_PlannedAction" );
 
-    if ( doTurnToForward( agent ) )
+    const CooperativeAction & first_action = M_chain_graph.getFirstAction();
+
+    // The pass executor already decides whether it needs to look at the
+    // receiver. A generic turn can waste a playable pass for a full cycle.
+    if ( first_action.category() != CooperativeAction::Pass
+         && doTurnToForward( agent ) )
     {
         return true;
     }
 
     const ServerParam & SP = ServerParam::i();
     const WorldModel & wm = agent->world();
-
-    const CooperativeAction & first_action = M_chain_graph.getFirstAction();
 
     ActionChainGraph::debug_send_chain( agent, M_chain_graph.getAllChain() );
 

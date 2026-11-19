@@ -331,32 +331,26 @@ Bhv_PassKickFindReceiver::execute( PlayerAgent * agent )
         return false;
     }
 
-    // if ( receiver->isGhost() )
-    // {
-    //     dlog.addText( Logger::TEAM,
-    //                   __FILE__": receiver is a ghost." );
-    //     return false;
-    // }
-
     if ( wm.gameMode().type() != GameMode::PlayOn )
     {
-        doPassKick( agent, pass );
-        return true;
+        return doPassKick( agent, pass );
     }
 
-    //
-    // estimate kick step
-    //
-    int kick_step = pass.kickCount(); //kickStep( wm, pass );
-
+    const int kick_step = pass.kickCount();
+    const bool recently_seen = receiver->seenPosCount() <= PASS_DIRECT_KICK_SEEN_POS_THR;
+    // A recent fused position can come from teammate communication. Use it
+    // when an opponent can contest the ball before we get another observation.
+    const bool reliable_under_pressure = receiver->posCount() <= 2
+        && wm.interceptTable().opponentStep() <= 1;
     if ( kick_step == 1
-         //&& pass.targetPoint().x > -20.0
-         && receiver->seenPosCount() <= PASS_DIRECT_KICK_SEEN_POS_THR )
+         && ! receiver->isGhost()
+         && receiver->pos().isValid()
+         && ( recently_seen || reliable_under_pressure ) )
     {
         dlog.addText( Logger::TEAM,
-                      __FILE__": 1 step kick." );
-        doPassKick( agent, pass );
-        return true;
+                      __FILE__": 1 step kick. fused_position=%d",
+                      ! recently_seen );
+        return doPassKick( agent, pass );
     }
 
     //
@@ -372,9 +366,7 @@ Bhv_PassKickFindReceiver::execute( PlayerAgent * agent )
         return true;
     }
 
-    if ( ( kick_step == 1
-           && receiver->seenPosCount() > PASS_DIRECT_KICK_SEEN_POS_THR )
-         || receiver->isGhost() )
+    if ( kick_step == 1 || receiver->isGhost() || ! receiver->pos().isValid() )
     {
         agent->debugClient().addMessage( "Pass:FindHold2" );
         dlog.addText( Logger::TEAM,

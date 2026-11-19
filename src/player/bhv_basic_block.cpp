@@ -102,7 +102,10 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
         return true;
     }
 
-    if (opp_min >= InterceptPrediction::unreachable_cycle)
+    // Stay available for the teammate already on the ball unless an
+    // opponent can contest it now or on the next cycle.
+    if (opp_min >= InterceptPrediction::unreachable_cycle
+        || (wm.kickableTeammate() && !wm.kickableOpponent() && opp_min > 1))
     {
         last_block_cycle = -1;
         return false;
