@@ -195,9 +195,8 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
                 }
             }
 
-            // The intercept table uses 1000 when no interception is predicted.
             // Ties are broken by uniform number.
-            if ( reach_cycle < 1000
+            if ( reach_cycle < InterceptPrediction::unreachable_cycle
                  && ( reach_cycle < self_min
                       || ( reach_cycle == self_min
                            && tm->unum() < wm.self().unum() ) ) )
@@ -214,6 +213,7 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
     else pressing = danger ? 8 : 4;
 
     if ( ! wm.kickableTeammate()
+         && self_min < InterceptPrediction::unreachable_cycle
          && may_press
          && self_min <= mate_min + ( second_defender ? 1 : 0 )
          && ( self_min <= 2 || self_min < opp_min + pressing ) )

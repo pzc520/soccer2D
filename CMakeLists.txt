@@ -49,6 +49,12 @@ if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost not found!")
 endif()
 
+# CppDNN is a header-only dependency of the player.
+find_path(CPPDNN_INCLUDE_DIR NAMES CppDNN/DeepNueralNetwork.h)
+if(NOT CPPDNN_INCLUDE_DIR)
+  message(FATAL_ERROR "CppDNN headers not found (CppDNN/DeepNueralNetwork.h).")
+endif()
+
 # zlib
 find_package(ZLIB)
 if(ZLIB_FOUND)

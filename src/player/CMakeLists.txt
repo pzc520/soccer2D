@@ -118,6 +118,7 @@ target_include_directories(sample_player
     ${PROJECT_SOURCE_DIR}/src/player/planner
     ${PROJECT_SOURCE_DIR}/src/player/setplay
     ${PROJECT_BINARY_DIR}
+    ${CPPDNN_INCLUDE_DIR}
   PUBLIC
     ${Boost_INCLUDE_DIRS}
     ${LIBRCSC_INCLUDE_DIR}

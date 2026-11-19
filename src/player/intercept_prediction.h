@@ -10,6 +10,9 @@
 // by both defensive behaviors without duplicating server physics.
 namespace InterceptPrediction {
 
+// Sentinel returned by the librcsc intercept table when no reach is predicted.
+constexpr int unreachable_cycle = 1000;
+
 template < typename Point, typename ReachCycles >
 int dashCyclesToControl( const Point & player_pos,
                          const Point & ball_pos,

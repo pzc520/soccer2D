@@ -11,6 +11,7 @@
 #include <rcsc/geom/vector_2d.h>
 #include <rcsc/player/soccer_action.h>
 #include <rcsc/player/abstract_player_object.h>
+#include <string>
 #include <utility>
 #include <vector>
 #include <CppDNN/DeepNueralNetwork.h>
@@ -120,7 +121,7 @@ public:
 
     static DeepNueralNetwork * pass_prediction;
 
-    static void load_dnn();
+    static bool load_dnn(const std::string &config_dir);
 
     vector<pass_prob> predict_pass_dnn(vector<double> & features, vector<int> ignored_player, int kicker);
 

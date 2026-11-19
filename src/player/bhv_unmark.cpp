@@ -14,6 +14,9 @@
 #include "bhv_unmark.h"
 #include "intention_receive.h"
 #include "planner/field_analyzer.h"
+#include <exception>
+#include <fstream>
+#include <iostream>
 #include <vector>
 
 #include <rcsc/player/say_message_builder.h>
@@ -466,16 +469,35 @@ bool Bhv_Unmark::run(PlayerAgent *agent, const UnmarkPosition &unmark_position) 
     return true;
 }
 
-void Bhv_Unmark::load_dnn(){
-    static bool load_dnn = false;
-    if(!load_dnn){
-        load_dnn = true; 
-        pass_prediction->ReadFromKeras("./unmark_dnn_weights.txt");
-    }
+bool Bhv_Unmark::load_dnn(const std::string &config_dir)
+{
+    static const bool loaded = [&config_dir]() {
+        const std::string filename = "unmark_dnn_weights.txt";
+        const std::string bundled_path = config_dir + "/../" + filename;
+        for (const auto &path : {bundled_path, filename})
+        {
+            if (std::ifstream(path))
+            {
+                try
+                {
+                    return pass_prediction->ReadFromKeras(path);
+                }
+                catch (const std::exception &error)
+                {
+                    std::cerr << "Unmark DNN: could not load " << path
+                              << ": " << error.what() << std::endl;
+                    return false;
+                }
+            }
+        }
+        std::cerr << "Unmark DNN: weights not found at " << bundled_path
+                  << " or in the current directory." << std::endl;
+        return false;
+    }();
+    return loaded;
 }
 
 vector<pass_prob> Bhv_Unmark::predict_pass_dnn(vector<double> & features, vector<int> ignored_player, int kicker){
-    load_dnn();
     MatrixXd input(290,1); // 290 12
     for (int i = 1; i <= 290; i += 1){
         input(i - 1,0) = features[i];
@@ -508,7 +530,8 @@ int Bhv_Unmark::find_passer_dnn(const WorldModel & wm, PlayerAgent * agent){
     if (fastest_tm < 1)
         return 0;
     int tm_reach_cycle = wm.interceptTable().teammateStep();
-    if (!state.updateKicker(fastest_tm, wm.ball().inertiaPoint(tm_reach_cycle)))
+    if (!state.updateKicker(fastest_tm, wm.ball().inertiaPoint(tm_reach_cycle))
+        || !load_dnn(agent->config().configDir()))
         return 0;
 
     vector<int> ignored_player;

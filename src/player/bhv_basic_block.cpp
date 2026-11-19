@@ -25,6 +25,8 @@
 #include "basic_actions/body_go_to_point.h"
 #include "basic_actions/body_intercept.h"
 
+#include <algorithm>
+
 #define DEBUG_BLOCK
 using namespace rcsc;
 
@@ -38,6 +40,7 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
     const int mate_min = wm.interceptTable().teammateStep();
     const int opp_min = wm.interceptTable().opponentStep();
     if ( ! wm.kickableTeammate()
+         && self_min < InterceptPrediction::unreachable_cycle
          && self_min <= mate_min
          && ( self_min <= 3 || self_min < opp_min + 3 ) )
     {
@@ -49,17 +52,22 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
         return true;
     }
 
-    auto tm_blockers = get_blockers(agent);
-
-    int self_unum = wm.self().unum();
-    if (tm_blockers.empty() || std::find(tm_blockers.begin(), tm_blockers.end(), self_unum) == tm_blockers.end())
+    if (opp_min >= InterceptPrediction::unreachable_cycle)
     {
         last_block_cycle = -1;
         return false;
     }
 
-    std::pair<int, Vector2D> best_blocker_target = get_best_blocker(agent, tm_blockers);
-    if (best_blocker_target.first != self_unum)
+    const Vector2D ball_inertia = wm.ball().inertiaPoint(opp_min);
+    const auto tm_blockers = get_blockers(agent, ball_inertia);
+    if (std::find(tm_blockers.begin(), tm_blockers.end(), &wm.self()) == tm_blockers.end())
+    {
+        last_block_cycle = -1;
+        return false;
+    }
+
+    const auto best_blocker_target = get_best_blocker(opp_min, ball_inertia, tm_blockers);
+    if (best_blocker_target.first != &wm.self())
     {
         last_block_cycle = -1;
         return false;
@@ -109,57 +117,53 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
     return true;
 }
 
-std::vector<int> Bhv_BasicBlock::get_blockers(const PlayerAgent *agent)
+std::vector<const AbstractPlayerObject *>
+Bhv_BasicBlock::get_blockers(const PlayerAgent *agent, const Vector2D &ball_inertia)
 {
     const WorldModel &wm = agent->world();
-    int opp_min = wm.interceptTable().opponentStep();
-    Vector2D ball_inertia = wm.ball().inertiaPoint(opp_min);
-    std::vector<int> tm_blockers;
-    for (auto tm : wm.ourPlayers())
+    double tm_defense_line_x = 0.0;
+    for (int unum = 2; unum <= 5; ++unum)
     {
-        if (tm->isGhost())
-            continue;
-        if (tm->goalie())
-            continue;
-        if (tm->isTackling())
-            continue;
-        if (!tm->playerTypePtr())
-            continue;
-        if (tm->pos().dist(ball_inertia) > 40)
-            continue;
-        Vector2D tm_home_pos = Strategy::i().getPosition(tm->unum());
-        if (tm_home_pos.dist(ball_inertia) > 40)
-            continue;
-        if (tm->unum() <= 5){
-            double tm_defense_line_x = 0;
-            for (int i = 2; i <= 5; i++){
-                auto defensive_tm = wm.ourPlayer(i);
-                if (defensive_tm != nullptr && defensive_tm->unum() > 0){
-                    if (defensive_tm->pos().x < tm_defense_line_x){
-                        tm_defense_line_x = defensive_tm->pos().x;
-                    }
-                }
-            }
-            if (ball_inertia.x > -30 && ball_inertia.x > tm_home_pos.x + 10 && ball_inertia.x > tm_defense_line_x + 10)
-                continue;
+        const auto *defender = wm.ourPlayer(unum);
+        if (defender && defender->unum() > 0)
+        {
+            tm_defense_line_x = std::min(tm_defense_line_x, defender->pos().x);
         }
-
-        tm_blockers.push_back(tm->unum());
     }
 
-    #ifdef DEBUG_BLOCK
-    for (auto & blocker: tm_blockers)
-        dlog.addText(Logger::BLOCK, "- tm %d is add as blocker", blocker);
-    dlog.addText(Logger::BLOCK, "================================");
-    #endif
+    std::vector<const AbstractPlayerObject *> tm_blockers;
+    for (const auto *tm : wm.ourPlayers())
+    {
+        if (tm->unum() == Unum_Unknown
+            || tm->isGhost() || tm->goalie() || tm->isTackling()
+            || !tm->playerTypePtr() || tm->pos().dist(ball_inertia) > 40)
+        {
+            continue;
+        }
+
+        const Vector2D tm_home_pos = Strategy::i().getPosition(tm->unum());
+        if (tm_home_pos.dist(ball_inertia) > 40
+            || (tm->unum() <= 5 && ball_inertia.x > -30
+                && ball_inertia.x > tm_home_pos.x + 10
+                && ball_inertia.x > tm_defense_line_x + 10))
+        {
+            continue;
+        }
+
+        tm_blockers.push_back(tm);
+        #ifdef DEBUG_BLOCK
+        dlog.addText(Logger::BLOCK, "- tm %d is add as blocker", tm->unum());
+        #endif
+    }
+
     return tm_blockers;
 }
 
-std::pair<int, Vector2D> Bhv_BasicBlock::get_best_blocker(const PlayerAgent *agent, std::vector<int> &tm_blockers)
+std::pair<const AbstractPlayerObject *, Vector2D>
+Bhv_BasicBlock::get_best_blocker(
+    int opp_min, Vector2D ball_inertia,
+    const std::vector<const AbstractPlayerObject *> &tm_blockers)
 {
-    const WorldModel &wm = agent->world();
-    int opp_min = wm.interceptTable().opponentStep();
-    Vector2D ball_inertia = wm.ball().inertiaPoint(opp_min);
     double dribble_speed = 0.7;
     #ifdef DEBUG_BLOCK
     dlog.addText(Logger::BLOCK, "=====get best blocker=====");
@@ -175,15 +179,15 @@ std::pair<int, Vector2D> Bhv_BasicBlock::get_best_blocker(const PlayerAgent *age
         snprintf( num, 8, "%d", cycle );
         dlog.addMessage(Logger::BLOCK, ball_inertia + Vector2D(0, 1), num);
         #endif
-        for (auto &tm_unum : tm_blockers)
+        for (const auto *tm : tm_blockers)
         {
-            auto tm = wm.ourPlayer(tm_unum);
+            const auto *player_type = tm->playerTypePtr();
             const Vector2D tm_pos = tm->inertiaPoint(cycle);
             const int dash_step = InterceptPrediction::dashCyclesToControl(
                 tm_pos, ball_inertia,
-                tm->playerTypePtr()->kickableArea(),
-                [&]( double distance ) {
-                    return tm->playerTypePtr()->cyclesToReachDistance( distance );
+                player_type->kickableArea(),
+                [player_type]( double distance ) {
+                    return player_type->cyclesToReachDistance( distance );
                 } );
             if ( dash_step <= cycle )
             {
@@ -192,7 +196,7 @@ std::pair<int, Vector2D> Bhv_BasicBlock::get_best_blocker(const PlayerAgent *age
                 dlog.addCircle(Logger::BLOCK, ball_inertia, 0.5, 0, 0, 255, false);
                 dlog.addLine(Logger::BLOCK, ball_inertia, tm_pos);
                 #endif
-                return std::make_pair(tm_unum, ball_inertia);
+                return {tm, ball_inertia};
             }
             #ifdef DEBUG_BLOCK
             else
@@ -203,7 +207,7 @@ std::pair<int, Vector2D> Bhv_BasicBlock::get_best_blocker(const PlayerAgent *age
         }
     }
 
-    return std::make_pair(0, Vector2D::INVALIDATED);
+    return {nullptr, Vector2D::INVALIDATED};
 }
 
 AngleDeg Bhv_BasicBlock::dribble_direction_detector(Vector2D dribble_pos)
