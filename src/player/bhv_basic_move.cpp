@@ -170,13 +170,17 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
             // Prefer librcsc's full interception simulation. Estimate locally
             // only when the table has no entry for this visible teammate.
             const auto found = player_steps.find( tm );
-            int reach_cycle = search_limit + 1;
+            int reach_cycle;
             if ( found != player_steps.end() )
             {
                 reach_cycle = found->second;
             }
-            else if ( tm->playerTypePtr() )
+            else
             {
+                if ( ! tm->playerTypePtr() )
+                {
+                    continue;
+                }
                 reach_cycle = InterceptPrediction::earliestReachCycle(
                     search_limit,
                     tm->playerTypePtr()->kickableArea(),
@@ -185,10 +189,15 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
                     [&]( double distance ) {
                         return tm->playerTypePtr()->cyclesToReachDistance( distance );
                     } );
+                if ( reach_cycle > search_limit )
+                {
+                    continue;
+                }
             }
 
+            // The intercept table uses 1000 when no interception is predicted.
             // Ties are broken by uniform number.
-            if ( reach_cycle <= search_limit
+            if ( reach_cycle < 1000
                  && ( reach_cycle < self_min
                       || ( reach_cycle == self_min
                            && tm->unum() < wm.self().unum() ) ) )
