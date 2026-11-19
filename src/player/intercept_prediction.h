@@ -13,6 +13,17 @@ namespace InterceptPrediction {
 // Sentinel returned by the librcsc intercept table when no reach is predicted.
 constexpr int unreachable_cycle = 1000;
 
+// The server stops play when the whole ball crosses a touchline or goal line.
+template < typename Point >
+bool isBallWithinPitch( const Point & pos,
+                        const double half_length,
+                        const double half_width,
+                        const double ball_radius )
+{
+    return std::abs( pos.x ) <= half_length + ball_radius
+        && std::abs( pos.y ) <= half_width + ball_radius;
+}
+
 inline bool hasBlockPriority( const int dash_cycles,
                               const int uniform_number,
                               const int other_dash_cycles,

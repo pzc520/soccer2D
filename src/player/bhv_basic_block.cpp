@@ -59,6 +59,14 @@ bool Bhv_BasicBlock::execute(PlayerAgent *agent)
     }
 
     const Vector2D ball_inertia = wm.ball().inertiaPoint(opp_min);
+    const ServerParam &server = ServerParam::i();
+    if (!InterceptPrediction::isBallWithinPitch(ball_inertia, server.pitchHalfLength(),
+                                                server.pitchHalfWidth(), server.ballSize()))
+    {
+        last_block_cycle = -1;
+        return false;
+    }
+
     const auto tm_blockers = get_blockers(agent, ball_inertia);
     if (std::find(tm_blockers.begin(), tm_blockers.end(), &wm.self()) == tm_blockers.end())
     {
@@ -164,7 +172,8 @@ Bhv_BasicBlock::get_best_blocker(
     int opp_min, Vector2D ball_inertia,
     const std::vector<const AbstractPlayerObject *> &tm_blockers)
 {
-    double dribble_speed = 0.7;
+    const ServerParam &server = ServerParam::i();
+    const double dribble_speed = 0.7;
     #ifdef DEBUG_BLOCK
     dlog.addText(Logger::BLOCK, "=====get best blocker=====");
     #endif
@@ -172,6 +181,12 @@ Bhv_BasicBlock::get_best_blocker(
     {
         AngleDeg dribble_dir = dribble_direction_detector(ball_inertia);
         ball_inertia += Vector2D::polar2vector(dribble_speed, dribble_dir);
+        if (!InterceptPrediction::isBallWithinPitch(ball_inertia, server.pitchHalfLength(),
+                                                    server.pitchHalfWidth(), server.ballSize()))
+        {
+            break;
+        }
+
         #ifdef DEBUG_BLOCK
         dlog.addText(Logger::BLOCK, "## id=%d, ball_pos=(%.1f, %.1f)", cycle, ball_inertia.x, ball_inertia.y);
         dlog.addCircle(Logger::BLOCK, ball_inertia, 0.5, 255, 0, 0, false);

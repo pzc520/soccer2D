@@ -81,4 +81,17 @@ int main()
     // A tie is resolved consistently even when each player sees itself first.
     assert( InterceptPrediction::hasBlockPriority( 3, 2, 3, 8 ) );
     assert( ! InterceptPrediction::hasBlockPriority( 3, 8, 3, 2 ) );
+
+    // The center may go past a line until the full ball has crossed it.
+    const double half_length = 52.5;
+    const double half_width = 34.0;
+    const double ball_radius = 0.085;
+    const auto in_play = [&]( const Point &pos ) {
+        return InterceptPrediction::isBallWithinPitch( pos, half_length, half_width, ball_radius );
+    };
+    assert( in_play( Point{ -half_length - ball_radius, 0.0 } ) );
+    assert( in_play( Point{ 0.0, half_width + ball_radius } ) );
+    assert( ! in_play( Point{ -55.7, 33.5 } ) );
+    assert( ! in_play( Point{ -34.3, -45.3 } ) );
+    assert( ! in_play( unknown_ball ) );
 }
