@@ -1145,6 +1145,8 @@ KickTable::checkInterfereAfterRelease( const WorldModel & world,
                                        const Vector2D & target_point,
                                        const double first_speed )
 {
+    // The current state may be reused for a different kick in the same cycle.
+    M_current_state.flag_ &= ~( RELEASE_INTERFERE | MAYBE_RELEASE_INTERFERE );
     checkInterfereAfterRelease( world, target_point, first_speed, 1, M_current_state );
 
     for ( int i = 0; i < MAX_DEPTH; ++i )

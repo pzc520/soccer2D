@@ -45,6 +45,10 @@
 #include <rcsc/player/debug_client.h>
 #include <rcsc/common/logger.h>
 
+#include <algorithm>
+#include <array>
+#include <vector>
+
 using namespace rcsc;
 
 /*-------------------------------------------------------------------*/
@@ -76,60 +80,109 @@ Bhv_StrictCheckShoot::execute( PlayerAgent * agent )
         return false;
     }
 
-    ShootGenerator::Container::const_iterator best_shoot
-        = std::min_element( cont.begin(),
-                            cont.end(),
-                            ShootGenerator::ScoreCmp() );
+    const ShootGenerator::ScoreCmp score_cmp;
+    const auto best_shoot = std::min_element( cont.begin(), cont.end(), score_cmp );
 
-    if ( best_shoot == cont.end() )
+    if ( ! wm.ball().velValid() )
     {
-        dlog.addText( Logger::SHOOT,
-                      __FILE__": no best shoot" );
+        // Keep the existing ball-control fallback when a kick cannot be simulated.
+        if ( Body_SmartKick( best_shoot->target_point_,
+                             best_shoot->first_ball_speed_,
+                             best_shoot->first_ball_speed_ * 0.99,
+                             3 ).execute( agent ) )
+        {
+            agent->setNeckAction( new Neck_TurnToGoalieOrScan( -1 ) );
+            return true;
+        }
         return false;
     }
 
-    // it is necessary to evaluate shoot courses
+    const auto try_shot = [&]( const ShootGenerator::Course & course ) {
+        const double one_step_speed
+            = KickTable::calc_max_velocity( ( course.target_point_ - wm.ball().pos() ).th(),
+                                            wm.self().kickRate(),
+                                            wm.ball().vel() ).r();
 
-    agent->debugClient().addMessage( "Shoot" );
-    agent->debugClient().setTarget( best_shoot->target_point_ );
+        dlog.addText( Logger::SHOOT,
+                      __FILE__": shoot[%d] target=(%.2f, %.2f) first_speed=%f one_kick_max_speed=%f",
+                      course.index_,
+                      course.target_point_.x,
+                      course.target_point_.y,
+                      course.first_ball_speed_,
+                      one_step_speed );
 
-    Vector2D one_step_vel
-        = KickTable::calc_max_velocity( ( best_shoot->target_point_ - wm.ball().pos() ).th(),
-                                        wm.self().kickRate(),
-                                        wm.ball().vel() );
-    double one_step_speed = one_step_vel.r();
-
-    dlog.addText( Logger::SHOOT,
-                  __FILE__": shoot[%d] target=(%.2f, %.2f) first_speed=%f one_kick_max_speed=%f",
-                  best_shoot->index_,
-                  best_shoot->target_point_.x,
-                  best_shoot->target_point_.y,
-                  best_shoot->first_ball_speed_,
-                  one_step_speed );
-
-    if ( one_step_speed > best_shoot->first_ball_speed_ * 0.99 )
-    {
-        if ( Body_SmartKick( best_shoot->target_point_,
-                             one_step_speed,
-                             one_step_speed * 0.99 - 0.0001,
-                             1 ).execute( agent ) )
+        const bool direct = one_step_speed > course.first_ball_speed_ * 0.99
+                      && Body_SmartKick( course.target_point_,
+                                         one_step_speed,
+                                         one_step_speed * 0.99 - 0.0001,
+                                         1 ).tryKick( agent );
+        if ( ! direct
+             && ! Body_SmartKick( course.target_point_,
+                                  course.first_ball_speed_,
+                                  course.first_ball_speed_ * 0.99,
+                                  3 ).tryKick( agent ) )
         {
-             agent->setNeckAction( new Neck_TurnToGoalieOrScan( -1 ) );
-             agent->debugClient().addMessage( "Force1Step" );
-             return true;
+            return false;
         }
-    }
 
-    if ( Body_SmartKick( best_shoot->target_point_,
-                         best_shoot->first_ball_speed_,
-                         best_shoot->first_ball_speed_ * 0.99,
-                         3 ).execute( agent ) )
-    {
-        if ( ! doTurnNeckToShootPoint( agent, best_shoot->target_point_ ) )
+        agent->debugClient().addMessage( "Shoot" );
+        agent->debugClient().setTarget( course.target_point_ );
+        if ( direct )
+        {
+            agent->setNeckAction( new Neck_TurnToGoalieOrScan( -1 ) );
+            agent->debugClient().addMessage( "Force1Step" );
+        }
+        else if ( ! doTurnNeckToShootPoint( agent, course.target_point_ ) )
         {
             agent->setNeckAction( new Neck_TurnToGoalieOrScan( -1 ) );
         }
         return true;
+    };
+
+    if ( try_shot( *best_shoot ) )
+    {
+        return true;
+    }
+
+    // Try at most four other directions in score order.
+    constexpr std::size_t max_alternatives = 4;
+    std::vector<const ShootGenerator::Course *> alternatives;
+    alternatives.reserve( cont.size() - 1 );
+    for ( const auto & course : cont )
+    {
+        if ( ! course.target_point_.equals( best_shoot->target_point_ ) )
+        {
+            alternatives.push_back( &course );
+        }
+    }
+    std::stable_sort( alternatives.begin(), alternatives.end(),
+                      [&]( const auto *lhs, const auto *rhs ) {
+                          return score_cmp( *lhs, *rhs );
+                      } );
+
+    std::array<Vector2D, max_alternatives> attempted_targets;
+    auto attempted_end = attempted_targets.begin();
+    for ( const auto *course : alternatives )
+    {
+        if ( attempted_end == attempted_targets.end() )
+        {
+            break;
+        }
+        if ( std::any_of( attempted_targets.begin(), attempted_end,
+                         [&]( const Vector2D & target ) {
+                             return target.equals( course->target_point_ );
+                         } ) )
+        {
+            continue;
+        }
+        *attempted_end++ = course->target_point_;
+        if ( try_shot( *course ) )
+        {
+            dlog.addText( Logger::SHOOT,
+                          __FILE__": alternate shot selected target=(%.2f, %.2f)",
+                          course->target_point_.x, course->target_point_.y );
+            return true;
+        }
     }
 
     dlog.addText( Logger::SHOOT,

@@ -56,6 +56,8 @@ private:
     //! result kick sequence holder
     KickTable::Sequence M_sequence;
 
+    bool execute( rcsc::PlayerAgent * agent, bool control_ball_on_failure );
+
 public:
     /*!
       \brief construct with all parameters
@@ -74,7 +76,16 @@ public:
         , M_max_step( max_step )
       { }
 
-    bool execute( rcsc::PlayerAgent * agent );
+    bool execute( rcsc::PlayerAgent * agent ) override
+      {
+          return execute( agent, true );
+      }
+
+    //! Try the kick without issuing a body command if no kick is possible.
+    bool tryKick( rcsc::PlayerAgent * agent )
+      {
+          return execute( agent, false );
+      }
 
     /*!
       \brief get the result kick sequence

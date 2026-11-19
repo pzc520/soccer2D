@@ -55,7 +55,8 @@ using namespace rcsc;
 
 */
 bool
-Body_SmartKick::execute( PlayerAgent * agent )
+Body_SmartKick::execute( PlayerAgent * agent,
+                         const bool control_ball_on_failure )
 {
     dlog.addText( Logger::KICK,
                   __FILE__": Body_SmartKick" );
@@ -76,20 +77,22 @@ Body_SmartKick::execute( PlayerAgent * agent )
     {
         dlog.addText( Logger::KICK,
                       __FILE__". unknown ball vel" );
-        return Body_StopBall().execute( agent );
+        return control_ball_on_failure && Body_StopBall().execute( agent );
     }
 
     double first_speed = bound( 0.001, M_first_speed, ServerParam::i().ballSpeedMax() );
     double first_speed_thr = std::max( 0.0, M_first_speed_thr );
     int max_step = std::max( 1, M_max_step );
 
-    if ( KickTable::instance().simulate( wm,
-                                         M_target_point,
-                                         first_speed,
-                                         first_speed_thr,
-                                         max_step,
-                                         M_sequence )
-         || M_sequence.speed_ >= first_speed_thr )
+    M_sequence = KickTable::Sequence();
+    const bool reached_target_speed = KickTable::instance().simulate( wm,
+                                                                      M_target_point,
+                                                                      first_speed,
+                                                                      first_speed_thr,
+                                                                      max_step,
+                                                                      M_sequence );
+    if ( ! M_sequence.pos_list_.empty()
+         && ( reached_target_speed || M_sequence.speed_ >= first_speed_thr ) )
     {
         agent->debugClient().addMessage( "SmartKick%d", (int)M_sequence.pos_list_.size() );
 #ifdef DEBUG_PRINT
@@ -111,9 +114,8 @@ Body_SmartKick::execute( PlayerAgent * agent )
 
         Vector2D vel = M_sequence.pos_list_.front() - wm.ball().pos();
         Vector2D kick_accel = vel - wm.ball().vel();
-        agent->doKick( kick_accel.r() / wm.self().kickRate(),
-                       kick_accel.th() - wm.self().body() );
-        return true;
+        return agent->doKick( kick_accel.r() / wm.self().kickRate(),
+                              kick_accel.th() - wm.self().body() );
     }
 
 
@@ -124,7 +126,6 @@ Body_SmartKick::execute( PlayerAgent * agent )
 
     // failed to search the kick sequence
 
-    agent->debugClient().addMessage( "SmartKick.Hold" );
     dlog.addText( Logger::KICK,
                   "(Body_SmartKick) Failure! target=(%.2f %.2f) speed=%.3f speed_thr=%.3f max_step=%d",
                   M_target_point.x, M_target_point.y,
@@ -136,6 +137,10 @@ Body_SmartKick::execute( PlayerAgent * agent )
                   M_sequence.power_,
                   (int)M_sequence.pos_list_.size() );
 
-    Body_HoldBall2008( false, M_target_point, M_target_point ).execute( agent );
+    if ( control_ball_on_failure )
+    {
+        agent->debugClient().addMessage( "SmartKick.Hold" );
+        Body_HoldBall2008( false, M_target_point, M_target_point ).execute( agent );
+    }
     return false;
 }
