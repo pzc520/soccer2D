@@ -387,46 +387,61 @@ void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state
         }
         return;
     }
-    std::vector<std::pair<double, double>> opp_dist_angle;
-    std::vector<ODEOpenAngle> candidates;
-    for (const auto& opp: state.opponents()) {
-        ODEOpenAngle candid;
+    const AngleDeg pass_direction = (tm_pos - ball_pos).th();
+    const double max_opp_ball_distance = tm_pos.dist(ball_pos) + 10.0;
+    std::pair<double, double> nearest{};
+    bool found_nearest = false;
+    DEPlayer *blocking_opponent = nullptr;
+    double blocking_angle = 0.0;
+    double blocking_distance = 0.0;
+    for (auto *opp : state.opponents()) {
         #ifdef ODEDebug
         dlog.addText(Logger::BLOCK, "######want to check opp %d", opp->unum());
         #endif
-        if (!opp->pos().isValid()) continue;
-        candid.dist_self_to_opp = opp->pos().dist(ball_pos);
-        opp_dist_angle.push_back(std::make_pair(opp->pos().dist(tm_pos), (opp->pos() - tm_pos).th().degree()));
-        AngleDeg diff = (tm_pos - ball_pos).th() - (opp->pos() - ball_pos).th();
+        const Vector2D &opp_pos = opp->pos();
+        if (!opp_pos.isValid())
+            continue;
+
+        if (extract_nearest) {
+            const double distance = opp_pos.dist(tm_pos);
+            if (!found_nearest || distance <= nearest.first) {
+                const std::pair<double, double> candidate(distance, (opp_pos - tm_pos).th().degree());
+                if (!found_nearest || candidate < nearest) {
+                    nearest = candidate;
+                    found_nearest = true;
+                }
+            }
+        }
+        if (!extract_open_angle)
+            continue;
+
+        const AngleDeg diff = pass_direction - (opp_pos - ball_pos).th();
         #ifdef ODEDebug
-        dlog.addText(Logger::BLOCK, "######check opp %d in %.1f,%.1f, diff:%.1f", opp->unum(), opp->pos().x, opp->pos().y, diff.degree());
+        dlog.addText(Logger::BLOCK, "######check opp %d in %.1f,%.1f, diff:%.1f", opp->unum(), opp_pos.x, opp_pos.y, diff.degree());
         #endif
-        if (diff.abs() > 60)
+        const double angle = diff.abs();
+        // Retain the first observation when opponents have the same angle.
+        if (angle > 60.0 || (blocking_opponent && angle >= blocking_angle))
             continue;
-        if (opp->pos().dist(ball_pos) > tm_pos.dist(ball_pos) + 10.0)
-            continue;
-        candid.unum = opp->unum();
-        candid.open_angle = diff.abs();
-        Vector2D proj_pos = Line2D(ball_pos, tm_pos).projection(opp->pos());
-        candid.dist_opp_proj = proj_pos.dist(opp->pos());
-        candid.dist_self_to_opp_proj = proj_pos.dist(state.kicker()->pos());
-        candidates.push_back(candid);
 
+        const double distance_to_ball = opp_pos.dist(ball_pos);
+        if (distance_to_ball > max_opp_ball_distance)
+            continue;
+        blocking_opponent = opp;
+        blocking_angle = angle;
+        blocking_distance = distance_to_ball;
     }
-    if (extract_open_angle) {
-        auto open_angle_sorter = [](ODEOpenAngle &p1, ODEOpenAngle &p2) -> bool {
-            return p1.open_angle < p2.open_angle;
-        };
-        std::sort(candidates.begin(), candidates.end(), open_angle_sorter);
 
-        if (candidates.size() >= 1){
+    if (extract_open_angle) {
+        if (blocking_opponent) {
+            const Vector2D projection = Line2D(ball_pos, tm_pos).projection(blocking_opponent->pos());
             #ifdef ODEDebug
-            dlog.addText(Logger::BLOCK, "###### add opp %d angle pass first", candidates[0].unum);
+            dlog.addText(Logger::BLOCK, "###### add opp %d angle pass first", blocking_opponent->unum());
             #endif
-            ADD_ELEM("pass_opp_dist", convertor_dist(candidates[0].dist_self_to_opp));
-            ADD_ELEM("pass_opp_dist_proj_to_opp", convertor_dist(candidates[0].dist_opp_proj));
-            ADD_ELEM("pass_opp_dist_proj_to_kicker", convertor_dist(candidates[0].dist_self_to_opp_proj));
-            ADD_ELEM("pass_opp_open_angle", convertor_angle(candidates[0].open_angle));
+            ADD_ELEM("pass_opp_dist", convertor_dist(blocking_distance));
+            ADD_ELEM("pass_opp_dist_proj_to_opp", convertor_dist(projection.dist(blocking_opponent->pos())));
+            ADD_ELEM("pass_opp_dist_proj_to_kicker", convertor_dist(projection.dist(state.kicker()->pos())));
+            ADD_ELEM("pass_opp_open_angle", convertor_angle(blocking_angle));
         }
         else{
             #ifdef ODEDebug
@@ -439,13 +454,12 @@ void OffensiveDataExtractor::extract_pass_angle(DEPlayer *player, DEState &state
         }
     }
     if (extract_nearest){
-        std::sort(opp_dist_angle.begin(), opp_dist_angle.end());
-        if (opp_dist_angle.size() >= 1){
+        if (found_nearest) {
             #ifdef ODEDebug
             dlog.addText(Logger::BLOCK, "###### add opp pass dist first");
             #endif
-            ADD_ELEM("opp_dist", convertor_dist(opp_dist_angle[0].first));
-            ADD_ELEM("opp_angle", convertor_angle(opp_dist_angle[0].second));
+            ADD_ELEM("opp_dist", convertor_dist(nearest.first));
+            ADD_ELEM("opp_angle", convertor_angle(nearest.second));
         }
         else{
             #ifdef ODEDebug

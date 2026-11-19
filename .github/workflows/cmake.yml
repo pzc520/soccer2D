@@ -56,3 +56,12 @@ jobs:
     - name: Build
       # Build your program with the given configuration
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Check player help and shutdown
+      run: |
+        status=0
+        build/bin/sample_player --help > /tmp/soccer2d-player-help.txt 2>&1 || status=$?
+        if [ "$status" -ne 1 ] || ! grep -q 'Additional options:' /tmp/soccer2d-player-help.txt; then
+          cat /tmp/soccer2d-player-help.txt
+          exit 1
+        fi

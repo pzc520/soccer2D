@@ -44,17 +44,21 @@
 using namespace rcsc;
 
 namespace {
+// librcsc keeps a reference to each key until the registration is destroyed.
+const std::string sample_name("Sample");
+const std::string default_name("Default");
+
 rcss::RegHolder sample = InterceptEvaluator::creators()
     .autoReg( [](){
                   return InterceptEvaluator::Ptr( new InterceptEvaluatorSample() );
               },
-        "Sample" );
+        sample_name );
 
 rcss::RegHolder def = InterceptEvaluator::creators()
     .autoReg( [](){
                   return InterceptEvaluator::Ptr( new InterceptEvaluatorSample() );
               },
-        "Default" );
+        default_name );
 
 }
 

@@ -26,6 +26,7 @@
 #include "basic_actions/body_intercept.h"
 
 #include <algorithm>
+#include <array>
 
 #define DEBUG_BLOCK
 using namespace rcsc;
@@ -241,22 +242,32 @@ Bhv_BasicBlock::get_best_blocker(
 
 AngleDeg Bhv_BasicBlock::dribble_direction_detector(Vector2D dribble_pos)
 {
-    AngleDeg best_dir(-180);
+    static const auto directions = [] {
+        std::array<Vector2D, 36> offsets;
+        for (std::size_t i = 0; i < offsets.size(); ++i)
+        {
+            offsets[i] = Vector2D::polar2vector(10.0, AngleDeg(-180.0 + 10.0 * i));
+        }
+        return offsets;
+    }();
+
+    const ServerParam &server = ServerParam::i();
+    std::size_t best_index = 0;
     double best_score = -1e9;
-    double dist = 10;
-    for (double dir = -180; dir < 180; dir += 10)
+    for (std::size_t i = 0; i < directions.size(); ++i)
     {
-        Vector2D target = dribble_pos + Vector2D::polar2vector(dist, AngleDeg(dir));
-        if (target.absX() > ServerParam::i().pitchHalfLength())
+        const Vector2D target = dribble_pos + directions[i];
+        if (target.absX() > server.pitchHalfLength() || target.absY() > server.pitchHalfWidth())
+        {
             continue;
-        if (target.absY() > ServerParam::i().pitchHalfWidth())
-            continue;
-        double score = -target.x + std::max(0.0, 40 - target.dist(Vector2D(-50, 0)));
+        }
+
+        const double score = -target.x + std::max(0.0, 40 - target.dist(Vector2D(-50, 0)));
         if (score > best_score)
         {
             best_score = score;
-            best_dir = AngleDeg(dir);
+            best_index = i;
         }
     }
-    return best_dir;
+    return AngleDeg(-180.0 + 10.0 * best_index);
 }
