@@ -565,10 +565,7 @@ FieldAnalyzer::can_shoot_from( const bool is_self,
                                const int valid_opponent_threshold )
 {
     static const double SHOOT_DIST_THR2 = std::pow( 17.0, 2 );
-    //static const double SHOOT_ANGLE_THRESHOLD = 20.0;
-    static const double SHOOT_ANGLE_THRESHOLD = ( is_self
-                                                  ? 20.0
-                                                  : 15.0 );
+    const double SHOOT_ANGLE_THRESHOLD = is_self ? 20.0 : 15.0;
     static const double OPPONENT_DIST_THR2 = std::pow( 20.0, 2 );
 
     if ( ServerParam::i().theirTeamGoalPos().dist2( pos )

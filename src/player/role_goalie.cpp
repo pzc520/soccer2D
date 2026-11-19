@@ -66,6 +66,8 @@ rcss::RegHolder role = SoccerRole::creators().autoReg( &RoleGoalie::create,
 bool
 RoleGoalie::execute( PlayerAgent * agent )
 {
+    const WorldModel & wm = agent->world();
+    const ServerParam & server = ServerParam::i();
     static const Rect2D our_penalty( Vector2D( -ServerParam::i().pitchHalfLength(),
                                                -ServerParam::i().penaltyAreaHalfWidth() + 1.0 ),
                                      Size2D( ServerParam::i().penaltyAreaLength() - 1.0,
@@ -75,19 +77,19 @@ RoleGoalie::execute( PlayerAgent * agent )
     // play_on play
 
     // catchable
-    if ( agent->world().time().cycle()
-         > agent->world().self().catchTime().cycle() + ServerParam::i().catchBanCycle()
-         && agent->world().ball().distFromSelf() < ServerParam::i().catchableArea() - 0.05
-         && our_penalty.contains( agent->world().ball().pos() ) )
+    if ( wm.time().cycle() > wm.self().catchTime().cycle() + server.catchBanCycle()
+         && wm.ball().distFromSelf() < server.catchableArea() - 0.05
+         && our_penalty.contains( wm.ball().pos() )
+         && ( ! server.backPasses() || wm.lastKickerSide() != wm.ourSide() )
+         && agent->doCatch() )
     {
         dlog.addText( Logger::ROLE,
                       __FILE__": catchable. ball dist=%.1f, my_catchable=%.1f",
-                      agent->world().ball().distFromSelf(),
-                      ServerParam::i().catchableArea() );
-        agent->doCatch();
+                      wm.ball().distFromSelf(),
+                      server.catchableArea() );
         agent->setNeckAction( new Neck_TurnToBall() );
     }
-    else if ( agent->world().self().isKickable() )
+    else if ( wm.self().isKickable() )
     {
         doKick( agent );
     }

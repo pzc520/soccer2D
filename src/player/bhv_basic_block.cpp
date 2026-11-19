@@ -31,12 +31,61 @@
 #define DEBUG_BLOCK
 using namespace rcsc;
 
+namespace {
+bool
+canLeaveDefensivePosition(const WorldModel &wm,
+                         const AbstractPlayerObject &player,
+                         const Vector2D &home_pos)
+{
+    const int role = Strategy::i().roleNumber(player.unum());
+    if (role != 2 && role != 3)
+    {
+        return true;
+    }
+
+    const Vector2D &ball = wm.ball().pos();
+    if (ball.absY() > 22.0)
+    {
+        return false;
+    }
+
+    // Keep the center backs in shape unless the ball needs immediate
+    // coverage on their side of the goal. Based on Marlik-2012 code.
+    if (home_pos.x < -38.0)
+    {
+        const double side_y = role == 2 ? -ball.y : ball.y;
+        const auto &intercept = wm.interceptTable();
+        int mate_min = intercept.teammateStep();
+        if (&player != &wm.self())
+        {
+            if (intercept.firstTeammate() == &player)
+            {
+                mate_min = intercept.secondTeammateStep();
+            }
+            mate_min = std::min(mate_min, intercept.selfStep());
+        }
+        const int opp_min = intercept.opponentStep();
+        return ball.x < -46.0 && side_y > 6.0 && side_y < 18.0
+            && opp_min <= 3 && opp_min <= mate_min
+            && ball.dist(player.pos()) < 9.5;
+    }
+
+    return true;
+}
+}
+
 int Bhv_BasicBlock::last_block_cycle = -1;
 Vector2D Bhv_BasicBlock::last_block_pos = Vector2D::INVALIDATED;
 
 bool Bhv_BasicBlock::execute(PlayerAgent *agent)
 {
     const WorldModel &wm = agent->world();
+    if (!canLeaveDefensivePosition(wm, wm.self(),
+                                   Strategy::i().getPosition(wm.self().unum())))
+    {
+        return false;
+    }
+
     const int self_min = wm.interceptTable().selfStep();
     const int mate_min = wm.interceptTable().teammateStep();
     const int opp_min = wm.interceptTable().opponentStep();
@@ -151,7 +200,8 @@ Bhv_BasicBlock::get_blockers(const PlayerAgent *agent, const Vector2D &ball_iner
         }
 
         const Vector2D tm_home_pos = Strategy::i().getPosition(tm->unum());
-        if (tm_home_pos.dist(ball_inertia) > 40
+        if (!canLeaveDefensivePosition(wm, *tm, tm_home_pos)
+            || tm_home_pos.dist(ball_inertia) > 40
             || (tm->unum() <= 5 && ball_inertia.x > -30
                 && ball_inertia.x > tm_home_pos.x + 10
                 && ball_inertia.x > tm_defense_line_x + 10))

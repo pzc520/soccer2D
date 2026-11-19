@@ -34,6 +34,7 @@
 
 #include "sample_field_evaluator.h"
 
+#include "action_state_pair.h"
 #include "field_analyzer.h"
 #include "simple_pass_checker.h"
 
@@ -298,18 +299,15 @@ SampleFieldEvaluator::~SampleFieldEvaluator()
  */
 double
 SampleFieldEvaluator::operator()(const PredictState &state,
-                                 const std::vector<ActionStatePair> & /*path*/,
+                                 const std::vector<ActionStatePair> &path,
                                  const rcsc::WorldModel &wm) const
 {
-    const double final_state_evaluation = evaluate_state( state , wm);
-
-    //
-    // ???
-    //
-
-    double result = final_state_evaluation;
-
-    return result;
+    if ( ! path.empty() && path.back().action().category() == CooperativeAction::Shoot )
+    {
+        // Prefer plans that finish sooner when the planner predicts a goal.
+        return 1.0e+7 - static_cast< double >( state.spendTime() );
+    }
+    return evaluate_state( state, wm );
 }
 
 
@@ -348,8 +346,8 @@ evaluate_state( const PredictState & state, const rcsc::WorldModel & wm )
     //
     // ball is in opponent goal
     //
-    if ( state.ball().pos().x > + ( SP.pitchHalfLength() - 0.1 )
-         && state.ball().pos().absY() < SP.goalHalfWidth() + 2.0 )
+    if ( state.ball().pos().x > SP.pitchHalfLength() + SP.ballSize()
+         && state.ball().pos().absY() < SP.goalHalfWidth() )
     {
 #ifdef DEBUG_PRINT
         dlog.addText( Logger::ACTION_CHAIN,

@@ -95,57 +95,14 @@ Bhv_BasicMove::execute( PlayerAgent * agent )
 
     const Vector2D target_point = Strategy::i().getPosition( wm.self().unum() );
 
-    // G2d: to retrieve opp team name
-    // C2D: Helios 18 Tune removed -> replace with BNN
-    // bool helios2018 = false;
-    // if (wm.opponentTeamName().find("HELIOS2018") != std::string::npos)
-	// helios2018 = true;
-//    if (std::min(self_min, mate_min) < opp_min){
-//
-//    }else{
-//        if (Bhv_BasicBlock().execute(agent)){
-//            return true;
-//        }
-//    }
-    // G2d: role
-    int role = Strategy::i().roleNumber( wm.self().unum() );
-
-    // G2D: blocking
-
-    Vector2D ball = wm.ball().pos();
-
-    double block_d = -10.0;
-
-    Vector2D me = wm.self().pos();
-    Vector2D homePos = target_point;
-    int num = role;
-
-    if (ball.x < block_d)
+    const int role = Strategy::i().roleNumber( wm.self().unum() );
+    const Vector2D & ball = wm.ball().pos();
+    const Vector2D & me = wm.self().pos();
+    const Vector2D & homePos = target_point;
+    if ( ball.x < -10.0 && Bhv_BasicBlock().execute( agent ) )
     {
-        double block_line = -38.0;
-
-    //  if (helios2018)
-    //      block_line = -48.0;
-
-    // acknowledgement: fragments of Marlik-2012 code
-        if( (num == 2 || num == 3) && homePos.x < block_line &&
-            !( num == 2 && ball.x < -46.0 && ball.y > -18.0 && ball.y < -6.0 &&
-               opp_min <= 3 && opp_min <= mate_min && ball.dist(me) < 9.5 ) &&
-            !( num == 3 && ball.x < -46.0 && ball.y <  18.0 && ball.y >  6.0  &&
-               opp_min <= 3 && opp_min <= mate_min && ball.dist(me) < 9.5 ) ) // do not block in this situation
-        {
-            // do nothing
-        }
-        else if( (num == 2 || num == 3) && fabs(wm.ball().pos().y) > 22.0 )
-        {
-            // do nothing
-        }
-        else if (Bhv_BasicBlock().execute(agent)){
-            return true;
-        }
-
-    } // end of block
-
+        return true;
+    }
 
     // The intercept table already compares reach cycles in normal play.
     // Near our goal, estimate the other players' reach cycles to decide whether

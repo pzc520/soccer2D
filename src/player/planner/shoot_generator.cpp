@@ -46,6 +46,9 @@
 #include <rcsc/math_util.h>
 #include <rcsc/timer.h>
 
+#include <algorithm>
+#include <cmath>
+
 #define SEARCH_UNTIL_MAX_SPEED_AT_SAME_POINT
 
 #define DEBUG_PROFILE
@@ -237,10 +240,29 @@ ShootGenerator::createShoot( const WorldModel & wm,
             : ( target_point - M_first_ball_pos ).setLengthVector( 0.1 ) );
     const double max_one_step_speed = max_one_step_vel.r();
 
-    double first_ball_speed
-        = std::max( ( ball_move_dist + 5.0 ) * ( 1.0 - SP.ballDecay() ),
-                    std::max( max_one_step_speed,
-                              1.5 ) );
+    const double min_travel_speed = ( ball_move_dist + 5.0 ) * ( 1.0 - SP.ballDecay() );
+    double first_ball_speed = std::max( min_travel_speed,
+                                       std::max( max_one_step_speed, 1.5 ) );
+
+    // Near goal, a safe one-touch shot may be slower than the normal sweep.
+    const double one_touch_speed = std::min( max_one_step_speed, ball_speed_max );
+    if ( wm.self().isKickable()
+         && one_touch_speed >= std::max( min_travel_speed, 0.001 )
+         && one_touch_speed < std::min( first_ball_speed, ball_speed_max ) - 0.001
+         && createShoot( wm, target_point, one_touch_speed, ball_move_angle, ball_move_dist ) )
+    {
+        Course & course = M_courses.back();
+        course.kick_step_ = 1;
+#ifdef SEARCH_UNTIL_MAX_SPEED_AT_SAME_POINT
+        if ( course.goalie_never_reach_ && course.opponent_never_reach_ )
+        {
+            return;
+        }
+        ++M_total_count;
+#else
+        return;
+#endif
+    }
 
     bool over_max = false;
 #ifdef DEBUG_PRINT_SUCCESS_COURSE
@@ -340,10 +362,14 @@ ShootGenerator::createShoot( const WorldModel & wm,
 {
     const ServerParam & SP = ServerParam::i();
 
-    const int ball_reach_step
-        = static_cast< int >( std::ceil( calc_length_geom_series( first_ball_speed,
-                                                                   ball_move_dist,
-                                                                   SP.ballDecay() ) ) );
+    const double travel_time = calc_length_geom_series( first_ball_speed,
+                                                        ball_move_dist,
+                                                        SP.ballDecay() );
+    if ( travel_time < 0.0 || ! std::isfinite( travel_time ) )
+    {
+        return false;
+    }
+    const int ball_reach_step = static_cast< int >( std::ceil( travel_time ) );
 #ifdef DEBUG_PRINT
     dlog.addText( Logger::SHOOT,
                   "%d: target=(%.2f %.2f) speed=%.3f angle=%.1f"
